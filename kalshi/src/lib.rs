@@ -115,6 +115,8 @@
 //! ```
 //!
 
+use std::error::Error;
+
 #[macro_use]
 mod utils;
 mod auth;
@@ -122,12 +124,14 @@ mod exchange;
 mod kalshi_error;
 mod market;
 mod portfolio;
+#[cfg(feature = "websockets")]
+mod websockets;
 
-pub use auth::*;
 pub use exchange::*;
 pub use kalshi_error::*;
 pub use market::*;
 pub use portfolio::*;
+pub use websockets::*;
 
 // imports
 use reqwest;
@@ -214,6 +218,21 @@ impl Kalshi {
             Some(val) => return Some(val.clone()),
             _ => return None,
         }
+    }
+
+    /// Retrieves the currently set base url
+    ///
+    /// # Returns
+    ///
+    /// Returns a &str of the current base url
+    ///
+    pub fn get_base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    #[cfg(feature = "websockets")]
+    pub async fn websockets(&self) -> Result<websockets::KalshiWebsocketClient, Box<dyn Error>> {
+        websockets::KalshiWebsocketClient::connect(self).await
     }
 }
 
