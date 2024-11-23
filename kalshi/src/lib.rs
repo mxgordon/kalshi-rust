@@ -154,6 +154,8 @@ use reqwest;
 pub struct Kalshi {
     /// - `base_url`: The base URL for the API, determined by the trading environment.
     base_url: String,
+    #[cfg(feature = "websockets")]
+    ws_url: String,
     /// - `curr_token`: A field for storing the current authentication token.
     curr_token: Option<String>,
     /// - `member_id`: A field for storing the member ID.
@@ -187,6 +189,8 @@ impl Kalshi {
     pub fn new(trading_env: TradingEnvironment) -> Kalshi {
         return Kalshi {
             base_url: utils::build_base_url(trading_env).to_string(),
+            #[cfg(feature = "websockets")]
+            ws_url: utils::build_ws_url(trading_env).to_string(),
             curr_token: None,
             member_id: None,
             client: reqwest::Client::new(),
@@ -229,11 +233,6 @@ impl Kalshi {
     pub fn get_base_url(&self) -> &str {
         &self.base_url
     }
-
-    #[cfg(feature = "websockets")]
-    pub async fn websockets(&self) -> Result<websockets::KalshiWebsocketClient, Box<dyn Error>> {
-        websockets::KalshiWebsocketClient::connect(self).await
-    }
 }
 
 // GENERAL ENUMS
@@ -244,6 +243,7 @@ impl Kalshi {
 /// This enum is used to specify whether the interaction with the Kalshi API should be in a demo (simulated) environment
 /// or in the live market with real financial transactions.
 ///
+#[derive(Clone, Copy, Debug)]
 pub enum TradingEnvironment {
     /// The demo mode represents a simulated environment where trades do not involve real money.
     /// This mode is typically used for testing and practice purposes.

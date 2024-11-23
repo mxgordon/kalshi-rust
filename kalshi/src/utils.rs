@@ -19,3 +19,10 @@ pub const fn build_base_url(trading_env: TradingEnvironment) -> &'static str {
         TradingEnvironment::DemoMode => "https://demo-api.kalshi.co/trade-api/v2",
     }
 }
+
+pub const fn build_ws_url(trading_env: TradingEnvironment) -> &'static str {
+    match trading_env {
+        TradingEnvironment::LiveMarketMode => "wss://trading-api.kalshi.com/trade-api/ws/v2",
+        TradingEnvironment::DemoMode => "wss://demo-api.kalshi.co/trade-api/ws/v2",
+    }
+}

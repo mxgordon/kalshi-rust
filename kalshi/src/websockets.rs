@@ -2,7 +2,7 @@
 
 use futures_util::{select_biased, FutureExt, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, time::Duration, vec};
+use std::{error::Error, str::FromStr, time::Duration, vec};
 use tokio::{
     net::TcpStream,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -11,7 +11,12 @@ use tokio::{
 };
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{http::Request, Message},
+    tungstenite::{
+        client::IntoClientRequest,
+        handshake,
+        http::{HeaderValue, Request, Uri},
+        Message,
+    },
     MaybeTlsStream, WebSocketStream,
 };
 
@@ -62,15 +67,27 @@ async fn kalshi_ws_handler(
     }
 }
 
+impl Kalshi {
+    pub async fn connect_ws(&self) -> Result<KalshiWebsocketClient, Box<dyn Error>> {
+        KalshiWebsocketClient::connect(self).await
+    }
+
+    pub fn get_ws_url(&self) -> &str {
+        &self.ws_url
+    }
+}
+
 impl KalshiWebsocketClient {
     pub async fn connect(kalshi: &Kalshi) -> Result<Self, Box<dyn Error>> {
         let curr_token = kalshi
             .get_user_token()
             .ok_or("No user token, login first using .login(..)".to_string())?;
-        let req = Request::builder()
-            .uri(kalshi.get_base_url())
-            .header("Authorization:Bearer", curr_token)
-            .body(())?;
+        let mut req = Uri::from_str(kalshi.get_ws_url())?.into_client_request()?;
+        req.headers_mut().insert(
+            "Authorization",
+            HeaderValue::from_str(format!("Bearer {curr_token}").as_str())?,
+        );
+
         let (ws_stream, _) = connect_async(req).await?;
 
         let (to_kalshi_tx, to_kalshi_rx) = unbounded_channel::<KalshiCommand>();
