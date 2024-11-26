@@ -115,7 +115,7 @@
 //! ```
 //!
 
-use std::error::Error;
+use std::{fmt::Debug, sync::Arc};
 
 #[macro_use]
 mod utils;
@@ -130,7 +130,15 @@ mod websockets;
 pub use exchange::*;
 pub use kalshi_error::*;
 pub use market::*;
+use openssl::{
+    hash::MessageDigest,
+    pkey::{PKey, Private},
+    rsa::Padding,
+    sign::{RsaPssSaltlen, Signer},
+};
 pub use portfolio::*;
+
+#[cfg(feature = "websockets")]
 pub use websockets::*;
 
 // imports
@@ -150,7 +158,7 @@ use reqwest;
 /// ```
 ///
 ///
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Kalshi {
     /// - `base_url`: The base URL for the API, determined by the trading environment.
     base_url: String,
@@ -162,6 +170,57 @@ pub struct Kalshi {
     member_id: Option<String>,
     /// - `client`: The HTTP client used for making requests to the marketplace.
     client: reqwest::Client,
+    /// - `auth`: Stores the method of authentication to use and any required inputs (key for example)
+    auth: KalshiAuth,
+}
+
+pub enum KalshiAuth {
+    #[deprecated(
+        note = "Kalshi seems to be moving to ApiKey, you might also have problems if you are using 2FA"
+    )]
+    EmailPassword,
+    ApiKey {
+        /// - `key_id`: UUID of the key, get from profile page
+        key_id: String,
+        /// - `key`: PEM formatted RSA private key, generate this on profile page
+        key: String,
+        /// - `p_key`: The private key loaded
+        p_key: Arc<PKey<Private>>,
+        /// - `signer`: If using apiKey auth, stores the RSA signer for the passed key
+        signer: Signer<'static>,
+    },
+}
+
+impl Clone for KalshiAuth {
+    fn clone(&self) -> Self {
+        match &self {
+            KalshiAuth::ApiKey { key_id, key, .. } => {
+                KalshiAuth::build_api_key(key_id.clone(), key.clone())
+            }
+            KalshiAuth::EmailPassword => KalshiAuth::EmailPassword,
+        }
+    }
+}
+
+impl KalshiAuth {
+    fn build_api_key(key_id: String, key: String) -> Self {
+        let p_key = PKey::private_key_from_pem(key.as_bytes())
+            .expect("Unable to load private key from pem string provided");
+        let mut signer = Signer::new(MessageDigest::sha256(), &p_key)
+            .expect("Unable to load signer from private key");
+        signer
+            .set_rsa_padding(Padding::PKCS1_PSS)
+            .expect("Unable to set rsa padding on signer");
+        signer
+            .set_rsa_pss_saltlen(RsaPssSaltlen::DIGEST_LENGTH)
+            .expect("Unable to set rsa pss salt length for signer");
+        KalshiAuth::ApiKey {
+            key_id,
+            key,
+            p_key: Arc::new(p_key),
+            signer,
+        }
+    }
 }
 
 impl Kalshi {
@@ -186,7 +245,7 @@ impl Kalshi {
     /// let kalshi = Kalshi::new(TradingEnvironment::LiveMarketMode);
     /// ```
     ///
-    pub fn new(trading_env: TradingEnvironment) -> Kalshi {
+    pub fn new(trading_env: TradingEnvironment) -> Self {
         return Kalshi {
             base_url: utils::build_base_url(trading_env).to_string(),
             #[cfg(feature = "websockets")]
@@ -194,6 +253,44 @@ impl Kalshi {
             curr_token: None,
             member_id: None,
             client: reqwest::Client::new(),
+            auth: KalshiAuth::EmailPassword,
+        };
+    }
+
+    /// Creates a new instance of Kalshi with the specified trading environment.
+    /// Use the passed api key for authenticating rest calls (TODO) and websockets
+    /// This environment determines the base URL used for API requests.
+    ///
+    /// # Arguments
+    ///
+    /// * `trading_env` - The trading environment to be used (LiveMarketMode: Trading with real money. DemoMode: Paper Trading).
+    /// * `key_id` - ID of the api key you get from account profile page
+    /// * `key` - PEM formatted RSA private key you get from account profile page
+    ///
+    /// # Example
+    ///
+    /// ## Creating a Demo instance.
+    /// ```
+    /// use kalshi::{Kalshi, TradingEnvironment};
+    /// let kalshi = Kalshi::new_with_api_key(TradingEnvironment::DemoMode, KalshiAuth::EmailPassword);
+    /// ```
+    ///
+    /// ## Creating a Live Trading instance (Warning, you're using real money!)
+    /// ```
+    /// use kalshi::{Kalshi, TradingEnvironment};
+    /// let kalshi = Kalshi::new_with_api_key(TradingEnvironment::LiveMarketMode, key_id: "f2f80-...".to_string() key: "-----BEGIN RSA PRIVATE KEY----- ...".to_string());
+    /// ```
+    ///
+    pub fn new_with_api_key(trading_env: TradingEnvironment, key_id: String, key: String) -> Self {
+        // Initialize signer if api key is passed
+        return Kalshi {
+            base_url: utils::build_base_url(trading_env).to_string(),
+            #[cfg(feature = "websockets")]
+            ws_url: utils::build_ws_url(trading_env).to_string(),
+            curr_token: None,
+            member_id: None,
+            client: reqwest::Client::new(),
+            auth: KalshiAuth::build_api_key(key_id, key),
         };
     }
 
@@ -252,4 +349,7 @@ pub enum TradingEnvironment {
     /// The live market mode is the real trading environment where all transactions involve actual financial stakes.
     /// Use this mode for actual trading activities with real money.
     LiveMarketMode,
+
+    // Legacy only markets
+    LegacyLiveMarketMode,
 }
