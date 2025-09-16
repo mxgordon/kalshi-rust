@@ -24,7 +24,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-use crate::{utils::api_key_headers, Kalshi, KalshiAuth};
+use crate::{Kalshi, KalshiAuth};
 
 use super::{
     commands::{
@@ -76,21 +76,18 @@ impl Kalshi {
 impl<'a> KalshiWebsocketClient {
     pub async fn connect(kalshi: &mut Kalshi) -> Result<Self, Box<dyn Error>> {
         let mut req = Uri::from_str(kalshi.get_ws_url())?.into_client_request()?;
-        let mut headers = req.headers_mut();
-        match &mut kalshi.auth {
-            KalshiAuth::EmailPassword => {
-                let curr_token = kalshi
-                    .get_user_token()
-                    .ok_or("No user token, login first using .login(..)".to_string())?;
-                headers.insert("Authorization", HeaderValue::from_str(&curr_token)?);
-            }
-            KalshiAuth::ApiKey { key_id, signer, .. } => {
-                let api_key_headers =
-                    api_key_headers(key_id, signer, "/trade-api/ws/v2", Method::GET)?;
-                for (key, val) in api_key_headers {
-                    headers.insert(key, HeaderValue::from_str(val.as_str())?);
-                }
-            }
+        let ws_api_path = kalshi.extract_url_path(kalshi.get_ws_url());
+        let auth_headers = kalshi
+            .generate_auth_headers(&ws_api_path, Method::GET)
+            .map_err(|e| format!("Auth header generation failed: {}", e))?;
+        let headers = req.headers_mut();
+        for (key, val) in &auth_headers {
+            let ws_header_name = tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(
+                key.as_str().as_bytes(),
+            )?;
+            let ws_header_value =
+                tokio_tungstenite::tungstenite::http::HeaderValue::from_str(val.to_str()?)?;
+            headers.insert(ws_header_name, ws_header_value);
         }
         let req_clone = req.clone();
         let (ws_stream, res) = connect_async(req).await.inspect_err(|e| match e {

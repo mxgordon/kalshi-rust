@@ -1,5 +1,6 @@
 use super::Kalshi;
 use crate::kalshi_error::*;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 impl Kalshi {
@@ -109,7 +110,7 @@ impl Kalshi {
     /// ).await.unwrap();
     /// ```
     pub async fn get_multiple_markets(
-        &self,
+        &mut self,
         limit: Option<i64>,
         cursor: Option<String>,
         event_ticker: Option<String>,
@@ -138,14 +139,13 @@ impl Kalshi {
                 panic!("Internal Parse Error, please contact developer!");
             });
 
-        let result: PublicMarketsResponse = self
-            .client
-            .get(markets_url)
-            .header("Authorization", self.curr_token.clone().unwrap())
-            .send()
-            .await?
-            .json()
-            .await?;
+        let api_path = self.get_api_path("markets");
+        let auth_headers = self.generate_auth_headers(&api_path, Method::GET)?;
+        let mut request = self.client.get(markets_url);
+        for (key, value) in &auth_headers {
+            request = request.header(key, value);
+        }
+        let result: PublicMarketsResponse = request.send().await?.json().await?;
 
         Ok((result.cursor, result.markets))
     }
@@ -253,7 +253,7 @@ impl Kalshi {
     /// let orderbook = kalshi_instance.get_market_orderbook(market_ticker, Some(10)).await.unwrap();
     /// ```
     pub async fn get_market_orderbook(
-        &self,
+        &mut self,
         ticker: &String,
         depth: Option<i32>,
     ) -> Result<Orderbook, KalshiError> {
@@ -270,14 +270,13 @@ impl Kalshi {
                 panic!("Internal Parse Error, please contact developer!");
             });
 
-        let result: OrderBookResponse = self
-            .client
-            .get(orderbook_url)
-            .header("Authorization", self.curr_token.clone().unwrap())
-            .send()
-            .await?
-            .json()
-            .await?;
+        let api_path = self.get_api_path(&format!("markets/{}/orderbook", ticker));
+        let auth_headers = self.generate_auth_headers(&api_path, Method::GET)?;
+        let mut request = self.client.get(orderbook_url);
+        for (key, value) in &auth_headers {
+            request = request.header(key, value);
+        }
+        let result: OrderBookResponse = request.send().await?.json().await?;
 
         return Ok(result.orderbook);
     }
@@ -311,7 +310,7 @@ impl Kalshi {
     /// ).await.unwrap();
     /// ```
     pub async fn get_market_history(
-        &self,
+        &mut self,
         ticker: &String,
         limit: Option<i32>,
         cursor: Option<String>,
@@ -334,14 +333,13 @@ impl Kalshi {
                 panic!("Internal Parse Error, please contact developer!");
             });
 
-        let result: MarketHistoryResponse = self
-            .client
-            .get(market_history_url)
-            .header("Authorization", self.curr_token.clone().unwrap())
-            .send()
-            .await?
-            .json()
-            .await?;
+        let api_path = self.get_api_path(&format!("markets/{}/history", ticker));
+        let auth_headers = self.generate_auth_headers(&api_path, Method::GET)?;
+        let mut request = self.client.get(market_history_url);
+        for (key, value) in &auth_headers {
+            request = request.header(key, value);
+        }
+        let result: MarketHistoryResponse = request.send().await?.json().await?;
 
         Ok((result.cursor, result.history))
     }

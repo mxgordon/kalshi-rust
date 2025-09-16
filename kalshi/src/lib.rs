@@ -116,6 +116,7 @@
 //!
 
 use std::{fmt::Debug, sync::Arc};
+use url::Url;
 
 #[macro_use]
 mod utils;
@@ -329,6 +330,60 @@ impl Kalshi {
     ///
     pub fn get_base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// Constructs the full API path for use in authentication signatures.
+    ///
+    /// This method takes a relative path (e.g., "markets", "events") and combines it
+    /// with the API base path to create the full path needed for API key signatures.
+    ///
+    /// # Arguments
+    /// * `relative_path` - The relative API endpoint path (without leading slash)
+    ///
+    /// # Returns
+    /// A String containing the full API path (e.g., "/trade-api/v2/markets")
+    ///
+    /// # Example
+    /// ```
+    /// let full_path = kalshi_instance.get_api_path("markets");
+    /// // Returns: "/trade-api/v2/markets"
+    /// ```
+    fn get_api_path(&self, relative_path: &str) -> String {
+        // Extract the API path from base_url using the url crate
+        // base_url format: "https://domain.com/trade-api/v2"
+        match Url::parse(&self.base_url) {
+            Ok(url) => {
+                let base_path = url.path().trim_end_matches('/');
+                format!("{}/{}", base_path, relative_path)
+            }
+            Err(_) => {
+                // Fallback to default API path if URL parsing fails
+                format!("/trade-api/v2/{}", relative_path)
+            }
+        }
+    }
+
+    /// Extracts the path component from any URL string.
+    ///
+    /// This is a general helper method that extracts the path from any URL,
+    /// useful for both REST API and WebSocket URLs.
+    ///
+    /// # Arguments
+    /// * `url_string` - The full URL to extract the path from
+    ///
+    /// # Returns
+    /// A String containing the URL path (e.g., "/trade-api/ws/v2")
+    ///
+    /// # Example
+    /// ```
+    /// let path = kalshi_instance.extract_url_path("wss://api.kalshi.com/trade-api/ws/v2");
+    /// // Returns: "/trade-api/ws/v2"
+    /// ```
+    fn extract_url_path(&self, url_string: &str) -> String {
+        match Url::parse(url_string) {
+            Ok(url) => url.path().to_string(),
+            Err(_) => "/trade-api/ws/v2".to_string(), // Fallback for websocket
+        }
     }
 }
 
