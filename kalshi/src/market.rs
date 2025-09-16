@@ -476,8 +476,6 @@ pub struct Market {
     pub open_time: String,
     /// Closing time of the market.
     pub close_time: String,
-    /// Expected expiration time of the market.
-    pub expected_expiration_time: Option<String>,
     /// Actual expiration time of the market.
     pub expiration_time: Option<String>,
     /// Latest possible expiration time of the market.
@@ -490,36 +488,64 @@ pub struct Market {
     pub response_price_units: String,
     /// Notional value of the market.
     pub notional_value: i64,
+    /// Notional value in dollars.
+    #[serde(default)]
+    pub notional_value_dollars: Option<String>,
     /// Minimum price movement in the market.
     pub tick_size: i64,
     /// Current bid price for the 'Yes' option.
     pub yes_bid: i64,
+    /// Current bid price for the 'Yes' option in dollars.
+    #[serde(default)]
+    pub yes_bid_dollars: Option<String>,
     /// Current ask price for the 'Yes' option.
     pub yes_ask: i64,
+    /// Current ask price for the 'Yes' option in dollars.
+    #[serde(default)]
+    pub yes_ask_dollars: Option<String>,
     /// Current bid price for the 'No' option.
     pub no_bid: i64,
+    /// Current bid price for the 'No' option in dollars.
+    #[serde(default)]
+    pub no_bid_dollars: Option<String>,
     /// Current ask price for the 'No' option.
     pub no_ask: i64,
+    /// Current ask price for the 'No' option in dollars.
+    #[serde(default)]
+    pub no_ask_dollars: Option<String>,
     /// Last traded price in the market.
     pub last_price: i64,
+    /// Last traded price in dollars.
+    #[serde(default)]
+    pub last_price_dollars: Option<String>,
     /// Previous bid price for the 'Yes' option.
     pub previous_yes_bid: i64,
+    /// Previous bid price for the 'Yes' option in dollars.
+    #[serde(default)]
+    pub previous_yes_bid_dollars: Option<String>,
     /// Previous ask price for the 'Yes' option.
     pub previous_yes_ask: i64,
+    /// Previous ask price for the 'Yes' option in dollars.
+    #[serde(default)]
+    pub previous_yes_ask_dollars: Option<String>,
     /// Previous traded price in the market.
     pub previous_price: i64,
+    /// Previous traded price in dollars.
+    #[serde(default)]
+    pub previous_price_dollars: Option<String>,
     /// Total trading volume in the market.
     pub volume: i64,
     /// Trading volume in the last 24 hours.
     pub volume_24h: i64,
     /// Liquidity available in the market.
     pub liquidity: i64,
+    /// Liquidity available in the market in dollars.
+    #[serde(default)]
+    pub liquidity_dollars: Option<String>,
     /// Open interest in the market.
     pub open_interest: i64,
     /// Result of the market settlement.
     pub result: SettlementResult,
-    /// Cap strike price, if applicable.
-    pub cap_strike: Option<f64>,
     /// Indicator if the market can close early.
     pub can_close_early: bool,
     /// Value at expiration.
@@ -528,18 +554,15 @@ pub struct Market {
     pub category: String,
     /// Risk limit in cents.
     pub risk_limit_cents: i64,
-    /// Type of strike, if applicable.
-    pub strike_type: Option<String>,
-    /// Floor strike price, if applicable.
-    pub floor_strike: Option<f64>,
     /// Primary rules for the market.
     pub rules_primary: String,
     /// Secondary rules for the market.
     pub rules_secondary: String,
     /// Settlement value for the market.
-    pub settlement_value: Option<String>,
-    /// Functional strike information, if applicable.
-    pub functional_strike: Option<String>,
+    pub settlement_value: Option<i64>,
+    /// Settlement value for the market in dollars.
+    #[serde(default)]
+    pub settlement_value_dollars: Option<String>,
 }
 
 /// An event in the Kalshi exchange.
@@ -705,4 +728,91 @@ pub enum MarketStatus {
 
     /// The market has been settled, and the outcome is determined.
     Settled,
+}
+
+#[cfg(test)]
+mod test {
+    use std::fmt::format;
+
+    use super::*;
+
+    fn display_json_error_context(error_msg: &str, json_data: &str) {
+        // Check if this is a variant error with location information
+        if error_msg
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .collect::<String>()
+            .ends_with("atlinecolumn")
+        {
+            // Extract line and column from error message like "at line 2 column 1059"
+            if let Some(location_start) = error_msg.find("at line ") {
+                let location_part = &error_msg[location_start + 8..]; // Skip "at line "
+                if let Some(space_pos) = location_part.find(" column ") {
+                    let line_str = &location_part[..space_pos];
+                    let column_part = &location_part[space_pos + 8..]; // Skip " column "
+                    let column_str = column_part.split_whitespace().next().unwrap_or("");
+
+                    if let (Ok(line_num), Ok(col_num)) =
+                        (line_str.parse::<usize>(), column_str.parse::<usize>())
+                    {
+                        let lines: Vec<&str> = json_data.lines().collect();
+
+                        eprintln!("=== SERIALIZATION ERROR DETECTED ===");
+                        eprintln!("Error: {}", error_msg);
+                        eprintln!("Location: line {}, column {}", line_num, col_num);
+
+                        if line_num > 0 && line_num <= lines.len() {
+                            let target_line = lines[line_num - 1]; // Convert to 0-based indexing
+                            eprintln!("Line {}: {}", line_num, target_line);
+
+                            // Show context around the error column
+                            if col_num > 0 && col_num <= target_line.len() {
+                                let start = col_num.saturating_sub(20);
+                                let end = (col_num + 20).min(target_line.len());
+                                let initial_msg = format!("Context around column {}: ...", col_num);
+                                eprintln!("{}{}...", initial_msg, &target_line[start..end]);
+
+                                // Show pointer to exact position
+                                let pointer_pos = col_num.saturating_sub(start);
+                                let pointer = " "
+                                    .repeat(initial_msg.len() + (pointer_pos.saturating_sub(1)))
+                                    + "^";
+                                eprintln!("{}", pointer);
+                            }
+                        }
+                        eprintln!("=== END SERIALIZATION ERROR DEBUG ===");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sample_markets_response_deserialization() {
+        let json_data = include_str!("../test_data/sample_markets.json");
+
+        let result: Result<Vec<Market>, _> = serde_json::from_str(json_data);
+
+        match result {
+            Ok(markets) => {
+                assert!(!markets.is_empty(), "Markets should not be empty");
+                println!("Successfully deserialized {} markets", markets.len());
+
+                // Verify we can access basic properties of the first market
+                let first_market = &markets[0];
+                assert!(
+                    !first_market.ticker.is_empty(),
+                    "Ticker should not be empty"
+                );
+                assert!(!first_market.title.is_empty(), "Title should not be empty");
+            }
+            Err(e) => {
+                let error_msg = format!("{}", e);
+
+                display_json_error_context(&error_msg, json_data);
+
+                panic!("Failed to deserialize PublicMarketsResponse: {}", e);
+            }
+        }
+    }
 }
