@@ -1,5 +1,6 @@
 use super::Kalshi;
 use crate::kalshi_error::*;
+use log;
 use reqwest::Method;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -203,6 +204,11 @@ impl Kalshi {
                 return Ok(result.markets);
             };
 
+            log::debug!(
+                "Fetched {} markets ({} new)",
+                all_markets.len(),
+                result.markets.len(),
+            );
             all_markets.extend(result.markets);
 
             if !update_cursor_param(&mut params, &result.cursor) {
@@ -267,12 +273,18 @@ impl Kalshi {
                     panic!("Internal Parse Error, please contact developer!");
                 });
 
-            let result: PublicEventsResponse = self.client.get(events_url).send().await?.json().await?;
+            let result: PublicEventsResponse =
+                self.client.get(events_url).send().await?.json().await?;
 
             if !retrieve_all {
                 return Ok(result.events);
             }
 
+            log::debug!(
+                "Fetched {} events ({} new)",
+                all_events.len(),
+                result.events.len(),
+            );
             all_events.extend(result.events);
 
             if !update_cursor_param(&mut params, &result.cursor) {
@@ -419,6 +431,11 @@ impl Kalshi {
                 return Ok(result.history);
             }
 
+            log::debug!(
+                "Fetched {} history ({} new)",
+                all_history.len(),
+                result.history.len(),
+            );
             all_history.extend(result.history);
 
             if !update_cursor_param(&mut params, &result.cursor) {
@@ -479,12 +496,18 @@ impl Kalshi {
                     panic!("Internal Parse Error, please contact developer!");
                 });
 
-            let result: PublicTradesResponse = self.client.get(trades_url).send().await?.json().await?;
+            let result: PublicTradesResponse =
+                self.client.get(trades_url).send().await?.json().await?;
 
             if !retrieve_all {
                 return Ok(result.trades);
             }
 
+            log::debug!(
+                "Fetched {} trades ({} new)",
+                all_trades.len(),
+                result.trades.len(),
+            );
             all_trades.extend(result.trades);
 
             if !update_cursor_param(&mut params, &result.cursor) {
@@ -518,6 +541,7 @@ struct PublicMarketsResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct PublicEventsResponse {
+    #[serde(deserialize_with = "empty_string_as_none")]
     cursor: Option<String>,
     events: Vec<Event>,
 }
@@ -534,6 +558,7 @@ struct OrderBookResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct MarketHistoryResponse {
+    #[serde(deserialize_with = "empty_string_as_none")]
     cursor: Option<String>,
     ticker: String,
     history: Vec<Snapshot>,
@@ -541,6 +566,7 @@ struct MarketHistoryResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct PublicTradesResponse {
+    #[serde(deserialize_with = "empty_string_as_none")]
     cursor: Option<String>,
     trades: Vec<Trade>,
 }
