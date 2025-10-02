@@ -163,7 +163,8 @@ pub struct MarketLifecycleAdditionalMetadata {
     #[serde(default)]
     event_ticker: Option<String>,
     expected_expiration_ts: u32,
-    strike_type: String,
+    #[serde(default)]
+    strike_type: Option<String>,
     #[serde(default)]
     floor_strike: Option<String>,
     #[serde(default)]
@@ -294,6 +295,7 @@ mod test {
     #[test]
     fn test_market_lifecycle_created() {
         let raw = r#"{"type":"market_lifecycle_v2","sid":1,"seq":29,"msg":{"market_ticker":"KXWTAMATCH-25OCT02LYSGAU-LYS","open_ts":1759352700,"close_ts":1760598000,"additional_metadata":{"name":"Eva Lys","title":"Will Eva Lys win the Lys vs Gauff match?","yes_sub_title":"Eva Lys","no_sub_title":"Eva Lys","rules_primary":"If Eva Lys wins the Lys vs Gauff professional tennis match in the 2025 WTA Beijing quarterfinal after a ball has been played, then the market resolves to Yes.","rules_secondary":"The following market refers to the Lys vs Gauff professional tennis match in the 2025 WTA Beijing quarterfinal after a ball has been played. If the match does not occur (signaled by a ball being played) due to a player injury, walkover, forfeiture, or any other cancellation (all before the match starts), the market will resolve to a fair price in accordance with the rules. If this match is postponed or delayed, the market will remain open and close after the rescheduled match has finished (within two weeks).","can_close_early":true,"event_ticker":"KXWTAMATCH-25OCT02LYSGAU","expected_expiration_ts":1759399200,"strike_type":"structured","custom_strike":{"tennis_competitor":"6c69f42c-5e27-4cfd-a9ea-8eb9fbb0bd12"}},"event_type":"created"}}"#;
+        // let raw = r#"{"type":"market_lifecycle_v2","sid":1,"seq":1239,"msg":{"market_ticker":"KXSWIFTATTENDEVENT-25OCT04","open_ts":1759375800,"close_ts":1759672800,"additional_metadata":{"name":"Yes","title":"Will Taylor Swift attend Saturday Night Live Season 51 Premiere?","yes_sub_title":"Yes","no_sub_title":"Yes","rules_primary":"If Taylor Swift attends Saturday Night Live Season 51 Premiere, then the market resolves to Yes.","rules_secondary":"Attendance is confirmed if the person is reported present at the event by any Source Agency, including social media posts by the person themselves. Virtual attendance counts as attendance unless the event is explicitly in-person only. Brief appearances or partial attendance count as attendance. The event must occur in the specified year. If the event is cancelled, postponed beyond the expiration date, or does not occur in the specified year, the market resolves to No.","can_close_early":true,"event_ticker":"KXSWIFTATTENDEVENT-25OCT04","expected_expiration_ts":1759672800},"event_type":"created"}}"#;
         let parsed = serde_json::from_str::<KalshiWebsocketResponse>(raw);
         if let Err(e) = &parsed {
             eprintln!("Parse error: {}", e);
