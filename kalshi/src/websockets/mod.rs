@@ -14,7 +14,7 @@ pub enum KalshiChannel {
     Ticker,
     Trade,
     Fill,
-    MarketLifecycle,
+    MarketLifecycleV2,
 }
 
 impl KalshiChannel {
@@ -24,7 +24,7 @@ impl KalshiChannel {
             KalshiChannel::Ticker => "ticker",
             KalshiChannel::Trade => "trade",
             KalshiChannel::Fill => "fill",
-            KalshiChannel::MarketLifecycle => "market_lifecycle",
+            KalshiChannel::MarketLifecycleV2 => "market_lifecycle_v2",
         }
     }
 }
