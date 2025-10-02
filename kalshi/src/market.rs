@@ -317,6 +317,49 @@ impl Kalshi {
 
         return Ok(result.series);
     }
+    /// Asynchronously retrieves detailed information multiple series from the Kalshi exchange.
+    ///
+    /// This method fetches data for a group of series identified by their category.
+    /// The series data includes information such as frequency, title, category, settlement sources,
+    /// and related contract URLs.
+    ///
+    /// # Arguments
+    /// * `category` - A reference to a string representing the series category.
+    /// * `include_product_metadata` - A boolean to include product metadata in the response.
+    /// * `tags` - A string, comma separated list of tags, to filter series with.
+    ///
+    /// # Returns
+    /// - `Ok(Vec<Series>)`: Vector of `Series` object on successful retrieval.
+    /// - `Err(KalshiError)`: Error in case of a failure in the HTTP request or response parsing.
+    /// # Example
+    /// ```
+    /// // Assuming `kalshi_instance` is an already authenticated instance of `Kalshi`
+    /// let category = "some_series_category";
+    /// let series = kalshi_instance.get_series_list(category, None, None).await.unwrap();
+    /// ```
+    pub async fn get_series_list(
+        &self,
+        category: &String,
+        include_product_metadata: Option<bool>,
+        tags: Option<String>,
+    ) -> Result<Vec<Series>, KalshiError> {
+        let series_url: &str = &format!("{}/series/", self.base_url.to_string());
+
+        let mut params: Vec<(&str, String)> = Vec::with_capacity(3);
+
+        add_param!(params, "category", Some(category));
+        add_param!(params, "include_product_metadata", include_product_metadata);
+        add_param!(params, "tags", tags);
+
+        let series_url =
+            reqwest::Url::parse_with_params(series_url, &params).unwrap_or_else(|err| {
+                eprintln!("{:?}", err);
+                panic!("Internal Parse Error, please contact developer!");
+            });
+
+        let result: SeriesList = self.client.get(series_url).send().await?.json().await?;
+        return Ok(result.series);
+    }
     /// Asynchronously retrieves the order book for a specific market in the Kalshi exchange.
     ///
     /// This method fetches the order book for a market, which includes the bid and ask prices
@@ -732,11 +775,31 @@ pub struct Series {
     /// Category of the series.
     pub category: String,
     /// Tags associated with the series.
-    pub tags: Vec<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
     /// Sources used for settling the series.
     pub settlement_sources: Vec<SettlementSource>,
     /// URL of the contract related to the series.
     pub contract_url: String,
+    pub contract_terms_url: String,
+    #[serde(default)]
+    pub additional_prohibitions: Option<Vec<String>>,
+    pub fee_type: String,
+    pub fee_multiplier: f64,
+    #[serde(default)]
+    pub product_metadata: Option<ProductMetadata>,
+}
+
+/// Response wrapper for series list from the API
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SeriesList {
+    pub series: Vec<Series>,
+}
+
+/// Product metadata for a series
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ProductMetadata {
+    pub scope: String,
 }
 
 /// A source of a settlement in the Kalshi exchange.
@@ -929,6 +992,41 @@ mod test {
                 display_json_error_context(&error_msg, json_data);
 
                 panic!("Failed to deserialize PublicMarketsResponse: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_series_list_deserialization() {
+        let json_data = include_str!("../test_data/sports_series.json");
+
+        match serde_json::from_str::<SeriesList>(&json_data) {
+            Ok(series_list) => {
+                assert!(
+                    !series_list.series.is_empty(),
+                    "Series list should not be empty"
+                );
+
+                let first_series = &series_list.series[0];
+                assert!(
+                    !first_series.ticker.is_empty(),
+                    "Ticker should not be empty"
+                );
+                assert!(!first_series.title.is_empty(), "Title should not be empty");
+                assert!(
+                    !first_series.category.is_empty(),
+                    "Category should not be empty"
+                );
+
+                println!(
+                    "Successfully deserialized {} series",
+                    series_list.series.len()
+                );
+            }
+            Err(e) => {
+                let error_msg = format!("{}", e);
+                display_json_error_context(&error_msg, &json_data);
+                panic!("Failed to deserialize SeriesList: {}", e);
             }
         }
     }
