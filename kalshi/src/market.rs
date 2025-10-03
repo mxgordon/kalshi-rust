@@ -1,5 +1,6 @@
 use super::Kalshi;
 use crate::kalshi_error::*;
+use futures::stream::Stream;
 use log;
 use reqwest::Method;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -170,52 +171,74 @@ impl Kalshi {
         min_close_ts: Option<i64>,
         status: Option<String>,
         tickers: Option<String>,
-    ) -> Result<Vec<Market>, KalshiError> {
-        let markets_url: &str = &format!("{}/markets", self.base_url.to_string());
-        let mut all_markets: Vec<Market> = Vec::new();
+    ) -> impl Stream<Item = Result<Market, KalshiError>> + '_ {
+        async_stream::stream! {
+            let markets_url = format!("{}/markets", self.base_url);
+            let mut params: Vec<(&str, String)> = Vec::with_capacity(10);
+            let retrieve_all = limit.is_none();
+            let mut total_market_count = 0;
 
-        let mut params: Vec<(&str, String)> = Vec::with_capacity(10);
-        let retrieve_all = limit.is_none();
+            add_param!(params, "limit", limit);
+            add_param!(params, "event_ticker", event_ticker);
+            add_param!(params, "series_ticker", series_ticker);
+            add_param!(params, "status", status);
+            add_param!(params, "min_close_ts", min_close_ts);
+            add_param!(params, "max_close_ts", max_close_ts);
+            add_param!(params, "tickers", tickers);
 
-        add_param!(params, "limit", limit);
-        add_param!(params, "event_ticker", event_ticker);
-        add_param!(params, "series_ticker", series_ticker);
-        add_param!(params, "status", status);
-        add_param!(params, "min_close_ts", min_close_ts);
-        add_param!(params, "max_close_ts", max_close_ts);
-        add_param!(params, "tickers", tickers);
+            loop {
+                let markets_url = reqwest::Url::parse_with_params(&markets_url, &params)
+                    .unwrap_or_else(|err| {
+                        eprintln!("{:?}", err);
+                        panic!("Internal Parse Error, please contact developer!");
+                    });
 
-        loop {
-            let markets_url =
-                reqwest::Url::parse_with_params(markets_url, &params).unwrap_or_else(|err| {
-                    eprintln!("{:?}", err);
-                    panic!("Internal Parse Error, please contact developer!");
-                });
+                let api_path = self.get_api_path("markets");
+                let auth_headers = match self.generate_auth_headers(&api_path, Method::GET) {
+                    Ok(headers) => headers,
+                    Err(e) => {
+                        yield Err(e);
+                        break;
+                    }
+                };
 
-            let api_path = self.get_api_path("markets");
-            let auth_headers = self.generate_auth_headers(&api_path, Method::GET)?;
-            let mut request = self.client.get(markets_url);
-            for (key, value) in &auth_headers {
-                request = request.header(key, value);
-            }
-            let result: PublicMarketsResponse = request.send().await?.json().await?;
+                let mut request = self.client.get(markets_url);
+                for (key, value) in &auth_headers {
+                    request = request.header(key, value);
+                }
 
-            if !retrieve_all {
-                return Ok(result.markets);
-            };
+                let result: PublicMarketsResponse = match request.send().await {
+                    Ok(response) => match response.json().await {
+                        Ok(data) => data,
+                        Err(e) => {
+                            yield Err(KalshiError::from(e));
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        yield Err(KalshiError::from(e));
+                        break;
+                    }
+                };
 
-            log::debug!(
-                "Fetched {} markets ({} new)",
-                all_markets.len(),
-                result.markets.len(),
-            );
-            all_markets.extend(result.markets);
+                let market_count = result.markets.len();
+                total_market_count += market_count;
 
-            if !update_cursor_param(&mut params, &result.cursor) {
-                break;
+                for market in result.markets {
+                    yield Ok(market);
+                }
+
+                if !retrieve_all {
+                    break;
+                }
+
+                log::debug!("Fetched {} markets ({} new)", total_market_count, market_count);
+
+                if !update_cursor_param(&mut params, &result.cursor) {
+                    break;
+                }
             }
         }
-        Ok(all_markets)
     }
     /// Asynchronously retrieves information about multiple events from the Kalshi exchange.
     ///
@@ -254,44 +277,57 @@ impl Kalshi {
         status: Option<String>,
         series_ticker: Option<String>,
         with_nested_markets: Option<bool>,
-    ) -> Result<Vec<Event>, KalshiError> {
-        let events_url: &str = &format!("{}/events", self.base_url.to_string());
-        let mut all_events: Vec<Event> = Vec::new();
+    ) -> impl Stream<Item = Result<Event, KalshiError>> + '_ {
+        async_stream::stream! {
+            let events_url = format!("{}/events", self.base_url);
+            let mut params: Vec<(&str, String)> = Vec::with_capacity(6);
+            let retrieve_all = limit.is_none();
+            let mut total_event_count = 0;
 
-        let mut params: Vec<(&str, String)> = Vec::with_capacity(6);
-        let retrieve_all = limit.is_none();
+            add_param!(params, "limit", limit);
+            add_param!(params, "status", status);
+            add_param!(params, "series_ticker", series_ticker);
+            add_param!(params, "with_nested_markets", with_nested_markets);
 
-        add_param!(params, "limit", limit);
-        add_param!(params, "status", status);
-        add_param!(params, "series_ticker", series_ticker);
-        add_param!(params, "with_nested_markets", with_nested_markets);
+            loop {
+                let events_url = reqwest::Url::parse_with_params(&events_url, &params)
+                    .unwrap_or_else(|err| {
+                        eprintln!("{:?}", err);
+                        panic!("Internal Parse Error, please contact developer!");
+                    });
 
-        loop {
-            let events_url =
-                reqwest::Url::parse_with_params(events_url, &params).unwrap_or_else(|err| {
-                    eprintln!("{:?}", err);
-                    panic!("Internal Parse Error, please contact developer!");
-                });
+                let result: PublicEventsResponse = match self.client.get(events_url).send().await {
+                    Ok(response) => match response.json().await {
+                        Ok(data) => data,
+                        Err(e) => {
+                            yield Err(KalshiError::from(e));
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        yield Err(KalshiError::from(e));
+                        break;
+                    }
+                };
 
-            let result: PublicEventsResponse =
-                self.client.get(events_url).send().await?.json().await?;
+                let event_count = result.events.len();
+                total_event_count += event_count;
 
-            if !retrieve_all {
-                return Ok(result.events);
-            }
+                for event in result.events {
+                    yield Ok(event);
+                }
 
-            log::debug!(
-                "Fetched {} events ({} new)",
-                all_events.len(),
-                result.events.len(),
-            );
-            all_events.extend(result.events);
+                if !retrieve_all {
+                    break;
+                }
 
-            if !update_cursor_param(&mut params, &result.cursor) {
-                break;
+                log::debug!("Fetched {} events ({} new)", total_event_count, event_count);
+
+                if !update_cursor_param(&mut params, &result.cursor) {
+                    break;
+                }
             }
         }
-        Ok(all_events)
     }
     /// Asynchronously retrieves detailed information about a specific series from the Kalshi exchange.
     ///
@@ -443,49 +479,71 @@ impl Kalshi {
         limit: Option<i32>,
         min_ts: Option<i64>,
         max_ts: Option<i64>,
-    ) -> Result<Vec<Snapshot>, KalshiError> {
-        let market_history_url: &str =
-            &format! {"{}/markets/{}/history", self.base_url.to_string(), ticker};
-        let mut all_history: Vec<Snapshot> = Vec::new();
+    ) -> impl Stream<Item = Result<Snapshot, KalshiError>> + '_ {
+        let ticker = ticker.clone();
+        async_stream::stream! {
+            let market_history_url = format!("{}/markets/{}/history", self.base_url, ticker);
+            let mut params: Vec<(&str, String)> = Vec::with_capacity(5);
+            let retrieve_all = limit.is_none();
+            let mut total_history_count = 0;
 
-        let mut params: Vec<(&str, String)> = Vec::with_capacity(5);
-        let retrieve_all = limit.is_none();
+            add_param!(params, "limit", limit);
+            add_param!(params, "min_ts", min_ts);
+            add_param!(params, "max_ts", max_ts);
 
-        add_param!(params, "limit", limit);
-        add_param!(params, "min_ts", min_ts);
-        add_param!(params, "max_ts", max_ts);
+            loop {
+                let market_history_url = reqwest::Url::parse_with_params(&market_history_url, &params)
+                    .unwrap_or_else(|err| {
+                        eprintln!("{:?}", err);
+                        panic!("Internal Parse Error, please contact developer!");
+                    });
 
-        loop {
-            let market_history_url = reqwest::Url::parse_with_params(market_history_url, &params)
-                .unwrap_or_else(|err| {
-                    eprintln!("{:?}", err);
-                    panic!("Internal Parse Error, please contact developer!");
-                });
+                let api_path = self.get_api_path(&format!("markets/{}/history", ticker));
+                let auth_headers = match self.generate_auth_headers(&api_path, Method::GET) {
+                    Ok(headers) => headers,
+                    Err(e) => {
+                        yield Err(e);
+                        break;
+                    }
+                };
 
-            let api_path = self.get_api_path(&format!("markets/{}/history", ticker));
-            let auth_headers = self.generate_auth_headers(&api_path, Method::GET)?;
-            let mut request = self.client.get(market_history_url);
-            for (key, value) in &auth_headers {
-                request = request.header(key, value);
-            }
-            let result: MarketHistoryResponse = request.send().await?.json().await?;
+                let mut request = self.client.get(market_history_url);
+                for (key, value) in &auth_headers {
+                    request = request.header(key, value);
+                }
 
-            if !retrieve_all {
-                return Ok(result.history);
-            }
+                let result: MarketHistoryResponse = match request.send().await {
+                    Ok(response) => match response.json().await {
+                        Ok(data) => data,
+                        Err(e) => {
+                            yield Err(KalshiError::from(e));
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        yield Err(KalshiError::from(e));
+                        break;
+                    }
+                };
 
-            log::debug!(
-                "Fetched {} history ({} new)",
-                all_history.len(),
-                result.history.len(),
-            );
-            all_history.extend(result.history);
+                let history_count = result.history.len();
+                total_history_count += history_count;
 
-            if !update_cursor_param(&mut params, &result.cursor) {
-                break;
+                for snapshot in result.history {
+                    yield Ok(snapshot);
+                }
+
+                if !retrieve_all {
+                    break;
+                }
+
+                log::debug!("Fetched {} history ({} new)", total_history_count, history_count);
+
+                if !update_cursor_param(&mut params, &result.cursor) {
+                    break;
+                }
             }
         }
-        Ok(all_history)
     }
 
     /// Asynchronously retrieves trade data from the Kalshi exchange.
@@ -520,44 +578,57 @@ impl Kalshi {
         ticker: Option<String>,
         min_ts: Option<i64>,
         max_ts: Option<i64>,
-    ) -> Result<Vec<Trade>, KalshiError> {
-        let trades_url: &str = &format!("{}/markets/trades", self.base_url.to_string());
-        let mut all_trades: Vec<Trade> = Vec::new();
+    ) -> impl Stream<Item = Result<Trade, KalshiError>> + '_ {
+        async_stream::stream! {
+            let trades_url = format!("{}/markets/trades", self.base_url);
+            let mut params: Vec<(&str, String)> = Vec::with_capacity(7);
+            let retrieve_all = limit.is_none();
+            let mut total_trade_count = 0;
 
-        let mut params: Vec<(&str, String)> = Vec::with_capacity(7);
-        let retrieve_all = limit.is_none();
+            add_param!(params, "limit", limit);
+            add_param!(params, "min_ts", min_ts);
+            add_param!(params, "max_ts", max_ts);
+            add_param!(params, "ticker", ticker);
 
-        add_param!(params, "limit", limit);
-        add_param!(params, "min_ts", min_ts);
-        add_param!(params, "max_ts", max_ts);
-        add_param!(params, "ticker", ticker);
+            loop {
+                let trades_url = reqwest::Url::parse_with_params(&trades_url, &params)
+                    .unwrap_or_else(|err| {
+                        eprintln!("{:?}", err);
+                        panic!("Internal Parse Error, please contact developer!");
+                    });
 
-        loop {
-            let trades_url =
-                reqwest::Url::parse_with_params(trades_url, &params).unwrap_or_else(|err| {
-                    eprintln!("{:?}", err);
-                    panic!("Internal Parse Error, please contact developer!");
-                });
+                let result: PublicTradesResponse = match self.client.get(trades_url).send().await {
+                    Ok(response) => match response.json().await {
+                        Ok(data) => data,
+                        Err(e) => {
+                            yield Err(KalshiError::from(e));
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        yield Err(KalshiError::from(e));
+                        break;
+                    }
+                };
 
-            let result: PublicTradesResponse =
-                self.client.get(trades_url).send().await?.json().await?;
+                let trade_count = result.trades.len();
+                total_trade_count += trade_count;
 
-            if !retrieve_all {
-                return Ok(result.trades);
-            }
+                for trade in result.trades {
+                    yield Ok(trade);
+                }
 
-            log::debug!(
-                "Fetched {} trades ({} new)",
-                all_trades.len(),
-                result.trades.len(),
-            );
-            all_trades.extend(result.trades);
+                if !retrieve_all {
+                    break;
+                }
 
-            if !update_cursor_param(&mut params, &result.cursor) {
-                break;
+                log::debug!("Fetched {} trades ({} new)", total_trade_count, trade_count);
+
+                if !update_cursor_param(&mut params, &result.cursor) {
+                    break;
+                }
             }
         }
-        Ok(all_trades)
     }
 }
 
