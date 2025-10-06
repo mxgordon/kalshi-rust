@@ -151,6 +151,20 @@ pub enum KalshiMarketLifecycleMessage {
     },
 }
 
+impl KalshiMarketLifecycleMessage {
+    /// Get the market ticker from any variant
+    pub fn get_market_ticker(&self) -> &str {
+        match self {
+            Self::Created { market_ticker, .. } => market_ticker,
+            Self::Activated { market_ticker, .. } => market_ticker,
+            Self::Deactivated { market_ticker, .. } => market_ticker,
+            Self::CloseDateUpdated { market_ticker, .. } => market_ticker,
+            Self::Determined { market_ticker, .. } => market_ticker,
+            Self::Settled { market_ticker, .. } => market_ticker,
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct MarketLifecycleAdditionalMetadata {
     pub name: String,
