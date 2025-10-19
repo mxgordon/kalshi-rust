@@ -9,11 +9,14 @@ fn empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Er
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(deserializer)?;
-    if s.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(s))
+    let s = Option::<String>::deserialize(deserializer)?;
+    match s {
+        // If None (null in JSON), return None
+        None => Ok(None),
+        // If Some, check if empty string
+        Some(s) if s.is_empty() => Ok(None),
+        // Otherwise return the string
+        Some(s) => Ok(Some(s)),
     }
 }
 
