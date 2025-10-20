@@ -181,7 +181,7 @@ impl Kalshi {
             let retrieve_all = limit.is_none();
             let mut total_market_count = 0;
 
-            let req_limit = Some(limit.unwrap_or(1000));
+            let req_limit = Some(limit.unwrap_or(200));
 
             add_param!(params, "limit", req_limit);
             add_param!(params, "event_ticker", event_ticker);
@@ -290,7 +290,7 @@ impl Kalshi {
             let retrieve_all = limit.is_none();
             let mut total_event_count = 0;
 
-            let req_limit = Some(limit.unwrap_or(1000));
+            let req_limit = Some(limit.unwrap_or(200));
 
             add_param!(params, "limit", req_limit);
             add_param!(params, "status", status);
