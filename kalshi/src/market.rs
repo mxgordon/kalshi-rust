@@ -174,7 +174,7 @@ impl Kalshi {
         min_close_ts: Option<i64>,
         status: Option<String>,
         tickers: Option<String>,
-    ) -> impl Stream<Item = Result<Market, KalshiError>> + '_ {
+    ) -> impl Stream<Item = Result<Vec<Market>, KalshiError>> + '_ {
         async_stream::stream! {
             let markets_url = format!("{}/markets", self.base_url);
             let mut params: Vec<(&str, String)> = Vec::with_capacity(10);
@@ -227,9 +227,10 @@ impl Kalshi {
                 let market_count = result.markets.len();
                 total_market_count += market_count;
 
-                for market in result.markets {
-                    yield Ok(market);
-                }
+                // for market in result.markets {
+                //     yield Ok(market);
+                // }
+                yield Ok(result.markets);
 
                 if !retrieve_all {
                     break;
@@ -280,7 +281,7 @@ impl Kalshi {
         status: Option<String>,
         series_ticker: Option<String>,
         with_nested_markets: Option<bool>,
-    ) -> impl Stream<Item = Result<Event, KalshiError>> + '_ {
+    ) -> impl Stream<Item = Result<Vec<Event>, KalshiError>> + '_ {
         async_stream::stream! {
             let events_url = format!("{}/events", self.base_url);
             let mut params: Vec<(&str, String)> = Vec::with_capacity(6);
@@ -316,9 +317,10 @@ impl Kalshi {
                 let event_count = result.events.len();
                 total_event_count += event_count;
 
-                for event in result.events {
-                    yield Ok(event);
-                }
+                // for event in result.events {
+                //     yield Ok(event);
+                // }
+                yield Ok(result.events);
 
                 if !retrieve_all {
                     break;
